@@ -32,22 +32,30 @@ class ApiService {
       }
     } catch (_) {}
 
-    final response = await http.post(
-      url,
-      headers: {
-        "Content-Type": "application/json",
-        if (idToken != null) "Authorization": "Bearer $idToken",
-      },
-      body: jsonEncode({
-        "message": message,
-      }),
-    );
+    try {
+      // Adicionado um timeout de 30 segundos para evitar que fique carregando para sempre
+      final response = await http.post(
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          if (idToken != null) "Authorization": "Bearer $idToken",
+        },
+        body: jsonEncode({
+          "message": message,
+        }),
+      ).timeout(const Duration(seconds: 30));
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['response'] ?? 'Sem resposta';
-    } else {
-      throw Exception("Erro no servidor: ${response.statusCode}");
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['response'] ?? 'Sem resposta';
+      } else {
+        throw Exception("Erro no servidor: ${response.statusCode}");
+      }
+    } catch (e) {
+      if (e.toString().contains('TimeoutException')) {
+        throw Exception("O servidor demorou muito para responder (estava acordando). Tente enviar novamente.");
+      }
+      rethrow;
     }
   }
 }
@@ -101,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     } catch (e) {
       setState(() {
-        _messages.add({'sender': 'ai', 'text': 'Erro de conexão: $e'});
+        _messages.add({'sender': 'ai', 'text': 'Erro: $e'});
       });
     } finally {
       setState(() {
