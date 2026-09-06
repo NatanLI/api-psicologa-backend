@@ -2,11 +2,60 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart'; // Importante para inicializar o Firebase
 
-void main() {
+void main() async {
+  // Garante que os widgets do Flutter estejam prontos antes de chamar serviços nativos
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializa o Firebase no app (necessário para o Web, Android e iOS)
+  try {
+    await Firebase.initializeApp();
+  } catch (e) {
+    debugPrint("Erro ao inicializar o Firebase: $e");
+  }
+
   runApp(const PsicologaApp());
 }
 
+// ==========================================
+// 1. SERVIÇO DE API (Isolado)
+// ==========================================
+class ApiService {
+  final String baseUrl = "https://api-psicologa-backend.onrender.com";
+
+  Future<String> sendMessage(String message) async {
+    final url = Uri.parse('$baseUrl/api/chat');
+    
+    final user = FirebaseAuth.instance.currentUser;
+    String? idToken;
+    if (user != null) {
+      idToken = await user.getIdToken();
+    }
+    
+    final response = await http.post(
+      url,
+      headers: {
+        "Content-Type": "application/json",
+        if (idToken != null) "Authorization": "Bearer $idToken",
+      },
+      body: jsonEncode({
+        "message": message,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['response'] ?? 'Sem resposta';
+    } else {
+      throw Exception("Erro no servidor: ${response.statusCode}");
+    }
+  }
+}
+
+// ==========================================
+// 2. APLICATIVO PRINCIPAL
+// ==========================================
 class PsicologaApp extends StatelessWidget {
   const PsicologaApp({super.key});
 
@@ -24,6 +73,9 @@ class PsicologaApp extends StatelessWidget {
   }
 }
 
+// ==========================================
+// 3. TELA DE CHAT
+// ==========================================
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
 
@@ -36,6 +88,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
+  // Instancia o serviço que comunica com o Render
+  final ApiService _apiService = ApiService();
+
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -47,36 +102,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.clear();
 
     try {
-      // Obter o token de autenticação do Firebase do usuário atual
-      final user = FirebaseAuth.instance.currentUser;
-      String? idToken;
-      
-      if (user != null) {
-        idToken = await user.getIdToken();
-      }
+      // Chama a API separada através do serviço
+      final aiResponse = await _apiService.sendMessage(text);
 
-      final response = await http.post(
-        Uri.parse('http://127.0.0.1:8000/api/chat'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (idToken != null) 'Authorization': 'Bearer $idToken',
-        },
-        body: jsonEncode({'message': text}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _messages.add({'sender': 'ai', 'text': data['response'] ?? 'Sem resposta'});
-        });
-      } else {
-        setState(() {
-          _messages.add({'sender': 'ai', 'text': 'Erro no servidor: ${response.statusCode}'});
-        });
-      }
+      setState(() {
+        _messages.add({'sender': 'ai', 'text': aiResponse});
+      });
     } catch (e) {
       setState(() {
-        _messages.add({'sender': 'ai', 'text': 'Erro de conexão com o backend.'});
+        _messages.add({'sender': 'ai', 'text': 'Erro de conexão com o backend no Render.'});
       });
     } finally {
       setState(() {
