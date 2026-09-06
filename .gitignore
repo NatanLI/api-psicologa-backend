@@ -1,0 +1,12 @@
+# Credenciais e Arquivos Sensíveis
+*.json
+.env
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambiente Virtual
+venv/
+env/
